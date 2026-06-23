@@ -162,6 +162,19 @@ body{font-family:'Inter',sans-serif;background:var(--black);color:var(--white);o
 .toast{position:fixed;bottom:30px;right:24px;background:var(--forest);border:1px solid rgba(212,168,67,.3);border-radius:10px;padding:12px 20px;font-size:.82rem;color:var(--white);z-index:3000;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none;font-family:'Rajdhani',sans-serif;letter-spacing:1px;max-width:300px}
 .toast.show{opacity:1;transform:translateY(0)}
 
+
+/* FISH PHOTOS */
+.day-block { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.day-block:last-child { border-bottom: none; margin-bottom: 0; }
+.fish-photos-wrap { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 10px; }
+.fish-photo-item { position: relative; }
+.fish-photo-img { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid rgba(212,168,67,0.4); box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer; display: block; transition: transform 0.2s; }
+.fish-photo-img:hover { transform: scale(1.05); border-color: var(--gold); }
+.fish-photo-del { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; background: #e53935; border: none; color: white; font-size: 0.6rem; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.fish-photo-label { font-size: 0.65rem; color: rgba(255,255,255,0.4); text-align: center; margin-top: 4px; font-family: 'Rajdhani', sans-serif; }
+.add-fish-btn { display: inline-flex; align-items: center; gap: 6px; background: rgba(212,168,67,0.1); border: 1.5px dashed rgba(212,168,67,0.4); border-radius: 8px; padding: 8px 14px; font-size: 0.8rem; color: var(--gold); cursor: pointer; font-family: 'Rajdhani', sans-serif; font-weight: 600; letter-spacing: 0.5px; transition: background 0.2s, border-color 0.2s; }
+.add-fish-btn:hover { background: rgba(212,168,67,0.18); border-color: var(--gold); }
+
 /* FOOTER */
 footer{background:var(--black);border-top:1px solid rgba(212,168,67,.15);padding:40px 24px;text-align:center}
 .footer-logo{font-family:'Bebas Neue',sans-serif;font-size:1.8rem;letter-spacing:5px;color:var(--gold);margin-bottom:8px}
@@ -321,7 +334,8 @@ window.addEventListener('load', function() {
 const state={
   names:Array.from({length:BOATS},()=>['','']),
   photos:Array.from({length:BOATS},()=>[null,null]),
-  scores:Array.from({length:BOATS},()=>Array(DAYS).fill(''))
+  scores:Array.from({length:BOATS},()=>Array(DAYS).fill('')),
+  fishPhotos:Array.from({length:BOATS},()=>Array.from({length:DAYS},()=>[]))
 };
 
 /* FIREBASE */
@@ -418,8 +432,27 @@ function buildScores(){
   const grid=document.getElementById('scores-grid');grid.innerHTML='';
   for(let b=0;b<BOATS;b++){
     const card=document.createElement('div');card.className='score-card';
-    card.innerHTML=`<div class="score-card-head"><h4 id="sh-${b}">${boatLabel(b)}</h4><div class="total-badge" id="tot-${b}">${getTotal(b)} cm</div></div><div class="score-card-body">${Array.from({length:DAYS},(_,d)=>`<div class="day-input-row"><div class="day-lbl">Zi ${d+1}</div><input class="day-input" type="number" min="0" placeholder="0" value="${state.scores[b][d]||''}" oninput="updateScore(${b},${d},this.value)"><div class="day-unit">cm</div></div>`).join('')}</div>`;
+    const daysHtml = Array.from({length:DAYS},(_,d)=>`
+      <div class="day-block" id="dayblock-${b}-${d}">
+        <div class="day-input-row">
+          <div class="day-lbl">Zi ${d+1}</div>
+          <input class="day-input" type="number" min="0" placeholder="0"
+            value="${state.scores[b][d]||''}"
+            oninput="updateScore(${b},${d},this.value)">
+          <div class="day-unit">cm</div>
+        </div>
+        <div class="fish-photos-wrap" id="photos-${b}-${d}"></div>
+        <label class="add-fish-btn">
+          <input type="file" accept="image/*" multiple style="display:none"
+            onchange="addFishPhotos(${b},${d},this)">
+          📷 Adaugă poză pește + ruletă
+        </label>
+      </div>
+    `).join('');
+    card.innerHTML=`<div class="score-card-head"><h4 id="sh-${b}">${boatLabel(b)}</h4><div class="total-badge" id="tot-${b}">${getTotal(b)} cm</div></div><div class="score-card-body">${daysHtml}</div>`;
     grid.appendChild(card);
+    // render existing photos
+    for(let d=0;d<DAYS;d++) renderFishPhotos(b,d);
   }
 }
 function boatLabel(b){const n0=state.names[b][0],n1=state.names[b][1];return(n0||n1)?`${n0||'—'} & ${n1||'—'}`:`Barca ${b+1}`}
@@ -429,6 +462,52 @@ function updateScore(b,d,val){
   renderStandings();save();
 }
 function getTotal(b){return state.scores[b].reduce((s,v)=>s+(parseInt(v)||0),0)}
+
+function addFishPhotos(b,d,input){
+  if(!input.files||!input.files.length)return;
+  const files=Array.from(input.files);
+  let loaded=0;
+  files.forEach(file=>{
+    const r=new FileReader();
+    r.onload=e=>{
+      state.fishPhotos[b][d].push(e.target.result);
+      loaded++;
+      if(loaded===files.length){
+        renderFishPhotos(b,d);
+        showToast('📷 '+files.length+' poz'+(files.length>1?'e adăugate!':'ă adăugată!'));
+      }
+    };
+    r.readAsDataURL(file);
+  });
+  input.value='';
+}
+
+function renderFishPhotos(b,d){
+  const wrap=document.getElementById(`photos-${b}-${d}`);
+  if(!wrap)return;
+  const photos=state.fishPhotos[b][d]||[];
+  if(photos.length===0){wrap.innerHTML='';return}
+  wrap.innerHTML=photos.map((src,i)=>`
+    <div class="fish-photo-item">
+      <img src="${src}" class="fish-photo-img" onclick="openPhotoFull('${src}')" alt="Pește ${i+1}">
+      <button class="fish-photo-del" onclick="deleteFishPhoto(${b},${d},${i})">✕</button>
+      <div class="fish-photo-label">Pește ${i+1}</div>
+    </div>
+  `).join('');
+}
+
+function deleteFishPhoto(b,d,i){
+  state.fishPhotos[b][d].splice(i,1);
+  renderFishPhotos(b,d);
+}
+
+function openPhotoFull(src){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
+  ov.innerHTML=`<img src="${src}" style="max-width:95vw;max-height:95vh;border-radius:8px;box-shadow:0 0 60px rgba(0,0,0,0.8)">`;
+  ov.onclick=()=>document.body.removeChild(ov);
+  document.body.appendChild(ov);
+}
 
 /* STANDINGS */
 function renderStandings(){
